@@ -1,0 +1,430 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Trips">
+<meta name="theme-color" content="#18212b">
+<meta name="robots" content="noindex">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<title>Trips</title>
+<style>
+/* Layout: a departures-board home (trip cards with illustrated covers), then a per-trip docket with three stacked sections */
+:root{
+  --bg:#f3f4f1; --surface:#ffffff; --ink:#18212b; --muted:#5d6873; --line:#dde1dc;
+  --accent:#d9822b; --accent-ink:#8a4a0e; --chip:#eceee9;
+  --warn-bg:#fdf1de; --warn-ink:#7a4a06; --ok:#2f7d55;
+  --display:ui-rounded,-apple-system,"SF Pro Rounded",system-ui,sans-serif;
+  --body:-apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-serif;
+  --mono:ui-monospace,SFMono-Regular,Menlo,monospace;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --bg:#12171d; --surface:#1a2129; --ink:#e7ebee; --muted:#9aa5ae; --line:#2b343e;
+  --accent:#eea24f; --accent-ink:#f3c48c; --chip:#232c35;
+  --warn-bg:#3a2a12; --warn-ink:#f5d3a0; --ok:#6cc79a; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#12171d; --surface:#1a2129; --ink:#e7ebee; --muted:#9aa5ae; --line:#2b343e;
+  --accent:#eea24f; --accent-ink:#f3c48c; --chip:#232c35;
+  --warn-bg:#3a2a12; --warn-ink:#f5d3a0; --ok:#6cc79a; color-scheme:dark}
+*{box-sizing:border-box}
+html{-webkit-text-size-adjust:100%}
+body{margin:0;-webkit-tap-highlight-color:transparent;background:var(--bg);color:var(--ink);font-family:var(--body);font-size:15px;line-height:1.5;
+  padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
+.wrap{max-width:1040px;margin:0 auto;padding-top:calc(env(safe-area-inset-top,0px) + 20px);padding-bottom:calc(env(safe-area-inset-bottom,0px) + 48px)}
+a{color:inherit}
+h1,h2,h3{font-family:var(--display);font-weight:700;letter-spacing:-.01em;text-wrap:balance;margin:0}
+.eyebrow{font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);font-weight:600}
+.mono{font-family:var(--mono);font-variant-numeric:tabular-nums}
+button{font:inherit;color:inherit}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px;border-radius:6px}
+
+/* home */
+.top{display:flex;flex-wrap:wrap;align-items:flex-end;justify-content:space-between;gap:12px 24px;margin-bottom:24px}
+.top h1{font-size:clamp(30px,5vw,44px);line-height:1.05}
+.next{color:var(--muted)}
+.next b{color:var(--ink)}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:18px}
+.card{display:flex;flex-direction:column;background:var(--surface);border:1px solid var(--line);border-radius:14px;overflow:hidden;
+  text-align:left;padding:0;cursor:pointer;transition:transform .15s ease,box-shadow .15s ease}
+.card:hover{transform:translateY(-2px);box-shadow:0 8px 24px rgba(10,20,30,.10)}
+.cover{position:relative;aspect-ratio:16/10;max-width:100%;background:var(--chip);overflow:hidden}
+.cover svg,.cover img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;display:block}
+.when{position:absolute;left:12px;top:12px;background:rgba(10,14,20,.72);color:#fff;font-size:12px;font-weight:600;
+  padding:4px 9px;border-radius:999px;letter-spacing:.02em}
+.card-body{padding:14px 16px 16px;display:flex;flex-direction:column;gap:6px}
+.card-body h2{font-size:21px;line-height:1.15}
+.dates{color:var(--muted);font-size:14px}
+.counts{display:flex;gap:14px;margin-top:6px;font-size:13px;color:var(--muted)}
+.counts span b{color:var(--ink);font-weight:600}
+.flag{display:inline-flex;align-items:center;gap:6px;font-size:12px;font-weight:600;color:var(--warn-ink);background:var(--warn-bg);
+  padding:3px 8px;border-radius:6px;align-self:flex-start;margin-top:4px}
+.empty{background:var(--surface);border:1px dashed var(--line);border-radius:14px;padding:28px;color:var(--muted)}
+
+/* detail */
+.back{display:inline-flex;align-items:center;gap:6px;background:none;border:0;padding:6px 0;color:var(--muted);cursor:pointer;font-weight:500;margin-bottom:12px}
+.back:hover{color:var(--ink)}
+.hero{position:relative;border-radius:16px;overflow:hidden;aspect-ratio:21/8;max-width:100%;min-height:180px;background:var(--chip)}
+.hero svg,.hero img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}
+.hero-text{position:absolute;inset:auto 0 0 0;padding:20px;background:linear-gradient(transparent,rgba(8,12,18,.78));color:#fff}
+.hero-text h1{font-size:clamp(26px,4.4vw,40px);line-height:1.05}
+.hero-text p{margin:4px 0 0;opacity:.9}
+.photo-btn{position:absolute;right:12px;top:12px;background:rgba(10,14,20,.6);color:#fff;border:0;border-radius:8px;padding:6px 10px;font-size:13px;cursor:pointer}
+.alerts{margin:18px 0 0;background:var(--warn-bg);color:var(--warn-ink);border-radius:12px;padding:14px 16px}
+.alerts h3{font-family:var(--body);font-size:13px;letter-spacing:.06em;text-transform:uppercase;margin-bottom:6px}
+.alerts ul{margin:0;padding-left:18px;display:grid;gap:4px}
+.section{margin-top:30px}
+.section-head{display:flex;align-items:baseline;gap:10px;padding-bottom:10px;border-bottom:2px solid var(--ink);margin-bottom:4px}
+.section-head h2{font-size:24px}
+.section-head .n{color:var(--muted);font-size:14px}
+.none{color:var(--muted);padding:14px 0}
+
+/* flight row = boarding-pass strip */
+.leg{display:grid;grid-template-columns:110px minmax(0,1fr) auto;gap:6px 18px;align-items:center;padding:14px 0;border-bottom:1px solid var(--line)}
+.leg .d{font-weight:600}
+.leg .d small{display:block;color:var(--muted);font-weight:400}
+.route{display:flex;align-items:center;gap:10px;min-width:0;flex-wrap:wrap}
+.pt{display:flex;flex-direction:column}
+.pt .code{font-family:var(--mono);font-size:20px;line-height:1.1}
+.pt .t{font-size:14px;color:var(--muted)}
+.pt .t b{color:var(--ink);font-weight:600}
+.dash{flex:1;min-width:30px;max-width:120px;border-top:2px dotted var(--line);position:relative}
+.dash::after{content:"✈";position:absolute;right:-4px;top:-12px;font-size:13px;color:var(--accent)}
+.fno{text-align:right}
+.fno .num{font-family:var(--mono);font-size:16px;background:var(--chip);padding:3px 8px;border-radius:6px;white-space:nowrap}
+.fno small{display:block;color:var(--muted);margin-top:4px;font-size:12px}
+.sub{grid-column:2 / -1;font-size:13px;color:var(--muted)}
+.sub a{color:var(--accent-ink);font-weight:500}
+.changed{color:var(--warn-ink);background:var(--warn-bg);padding:1px 6px;border-radius:4px;font-size:12px;font-weight:600;margin-left:6px}
+
+/* hotels & activities */
+.item{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:8px 18px;padding:16px 0;border-bottom:1px solid var(--line)}
+.item h3{font-size:18px;line-height:1.25}
+.stay{display:flex;flex-wrap:wrap;gap:8px 22px;margin-top:6px;font-size:14px}
+.stay div span{display:block;font-size:11px;letter-spacing:.07em;text-transform:uppercase;color:var(--muted);font-weight:600}
+.howto{grid-column:1 / -1;background:var(--chip);border-radius:10px;padding:10px 12px;font-size:14px}
+.howto b{font-size:11px;letter-spacing:.07em;text-transform:uppercase;color:var(--muted);display:block;margin-bottom:2px}
+.links{display:flex;flex-direction:column;gap:6px;align-items:flex-end}
+.btn{display:inline-flex;align-items:center;gap:6px;font-size:13px;font-weight:600;text-decoration:none;border:1px solid var(--line);
+  border-radius:8px;padding:6px 10px;background:var(--surface);white-space:nowrap}
+.btn:hover{border-color:var(--accent)}
+.ref{font-size:13px;color:var(--muted)}
+.act-when{font-size:14px;color:var(--muted)}
+.act-when b{color:var(--ink)}
+.note{font-size:14px;color:var(--muted);margin-top:4px}
+.sync{margin-top:40px;font-size:13px;color:var(--muted);display:flex;flex-wrap:wrap;gap:6px 16px}
+
+@media (max-width:600px){
+  .leg{grid-template-columns:minmax(0,1fr) auto}
+  .leg .d{grid-column:1 / -1}
+  .route{grid-column:1}
+  .sub{grid-column:1 / -1}
+  .item{grid-template-columns:minmax(0,1fr)}
+  .links{flex-direction:row;flex-wrap:wrap;align-items:flex-start}
+  .hero{aspect-ratio:4/3}
+}
+@media (prefers-reduced-motion:reduce){.card{transition:none}.card:hover{transform:none}}
+
+.lock{min-height:70vh;display:flex;flex-direction:column;justify-content:center;gap:14px;max-width:420px;margin:0 auto}
+.lock h1{font-size:34px}
+.lock p{color:var(--muted);margin:0}
+.lock input{font:inherit;font-size:17px;padding:12px 14px;border-radius:12px;border:1px solid var(--line);background:var(--surface);color:var(--ink);width:100%}
+.lock button{font:inherit;font-size:17px;font-weight:600;padding:12px 14px;border-radius:12px;border:0;background:var(--accent);color:#1a1209;cursor:pointer}
+.lock .err{color:#c0392b;font-size:14px;min-height:1.2em}
+.refresh{background:none;border:1px solid var(--line);border-radius:999px;padding:6px 12px;font-size:13px;color:var(--muted);cursor:pointer}
+.offline{font-size:13px;color:var(--warn-ink);background:var(--warn-bg);border-radius:8px;padding:6px 10px;margin-bottom:14px}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <main id="app" aria-live="polite"><div class="empty">Opening your trips…</div></main>
+  <input type="file" id="photo-input" accept="image/*" hidden>
+</div>
+<script>
+(function(){
+  "use strict";
+  var state = { trips: [], meta: null, loaded: false, stale: false, canWrite: false, assets: null, db: null };
+  var app = document.getElementById("app");
+  var photoInput = document.getElementById("photo-input");
+  var photoTarget = null;
+
+  function esc(s){ return String(s == null ? "" : s).replace(/[&<>"']/g, function(c){ return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]; }); }
+  function todayISO(){ var d = new Date(); return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0"); }
+  function parse(iso){ var p = String(iso).split("-"); return new Date(+p[0], +p[1]-1, +p[2]); }
+  function fmt(iso, opts){ if(!iso) return ""; return parse(iso).toLocaleDateString("en-GB", opts || {weekday:"short", day:"numeric", month:"short"}); }
+  function range(a, b){
+    if(!a) return "";
+    var A = parse(a), B = b ? parse(b) : A;
+    var sameYear = A.getFullYear() === B.getFullYear();
+    var o1 = {day:"numeric", month:"short"}; if(!sameYear) o1.year = "numeric";
+    var s = A.toLocaleDateString("en-GB", o1);
+    if(!b || a === b) return s + (sameYear ? " " + A.getFullYear() : "");
+    return s + " – " + B.toLocaleDateString("en-GB", {day:"numeric", month:"short", year:"numeric"});
+  }
+  function daysUntil(iso){ return Math.round((parse(iso) - parse(todayISO())) / 864e5); }
+  function whenLabel(t){
+    var n = daysUntil(t.start), m = daysUntil(t.end || t.start);
+    if(n > 1) return "In " + n + " days";
+    if(n === 1) return "Tomorrow";
+    if(n <= 0 && m >= 0) return "Happening now";
+    return "Past";
+  }
+  function mapsUrl(q){ return "https://www.google.com/maps/search/?api=1&query=" + encodeURIComponent(q); }
+
+  /* ---------- illustrated covers (one per scene) ---------- */
+  function cover(scene){
+    var V = 'viewBox="0 0 800 500" preserveAspectRatio="xMidYMid slice" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"';
+    if(scene === "india") return '<svg '+V+'><defs><linearGradient id="gi" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#f6b46b"/><stop offset=".6" stop-color="#f08a5d"/><stop offset="1" stop-color="#c8566b"/></linearGradient></defs>'+
+      '<rect width="800" height="500" fill="url(#gi)"/><circle cx="400" cy="200" r="70" fill="#fde2b0" opacity=".85"/>'+
+      '<g fill="#5b2a3c"><rect x="250" y="250" width="300" height="160"/><path d="M330 250 Q400 120 470 250Z"/><rect x="396" y="128" width="8" height="30"/>'+
+      '<path d="M270 250 Q290 210 310 250Z"/><path d="M490 250 Q510 210 530 250Z"/><rect x="175" y="170" width="14" height="240"/><rect x="611" y="170" width="14" height="240"/>'+
+      '<path d="M170 172 Q182 150 194 172Z"/><path d="M606 172 Q618 150 630 172Z"/><rect x="0" y="405" width="800" height="95"/></g>'+
+      '<g fill="#7b3a50"><path d="M370 410 Q400 330 430 410Z"/></g><rect x="0" y="430" width="800" height="70" fill="#8a4a63" opacity=".55"/></svg>';
+    if(scene === "redsea") return '<svg '+V+'><defs><linearGradient id="gr" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#ffd7a1"/><stop offset=".45" stop-color="#f7a76c"/><stop offset=".46" stop-color="#2bb3b1"/><stop offset="1" stop-color="#0b4f71"/></linearGradient></defs>'+
+      '<rect width="800" height="500" fill="url(#gr)"/><circle cx="600" cy="150" r="46" fill="#fff1d2"/>'+
+      '<path d="M0 230 L120 150 L210 205 L330 120 L450 210 L560 165 L680 225 L800 180 L800 230Z" fill="#b5674a"/>'+
+      '<path d="M0 230 L90 190 L190 230Z M360 230 L470 185 L590 230Z" fill="#94503a"/>'+
+      '<g fill="#e8705f"><path d="M80 500 C80 420 60 400 70 360 C90 400 100 420 100 500Z"/><path d="M110 500 C115 440 140 420 150 390 C155 430 135 460 135 500Z"/></g>'+
+      '<g fill="#f2b35a"><circle cx="640" cy="470" r="34"/><circle cx="690" cy="485" r="26"/></g>'+
+      '<g fill="#ffffff" opacity=".35"><rect x="0" y="262" width="800" height="3"/><rect x="0" y="300" width="800" height="2"/></g>'+
+      '<path d="M420 360 q30 -14 60 0 q-30 14 -60 0z M480 360 l14 -10 l0 20z" fill="#ffd166"/></svg>';
+    if(scene === "salt") return '<svg '+V+'><defs><linearGradient id="gs" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#7fb7e6"/><stop offset=".5" stop-color="#e9d6e6"/><stop offset=".5" stop-color="#e9d6e6"/><stop offset="1" stop-color="#7fb7e6"/></linearGradient></defs>'+
+      '<rect width="800" height="500" fill="url(#gs)"/>'+
+      '<path d="M380 250 L520 120 L660 250Z" fill="#8a5d6b"/><path d="M480 155 L520 120 L560 155 L540 150 L520 162 L500 150Z" fill="#fff"/>'+
+      '<path d="M380 250 L520 380 L660 250Z" fill="#8a5d6b" opacity=".55"/>'+
+      '<path d="M0 250 L120 205 L230 250Z" fill="#a27486"/><path d="M0 250 L120 295 L230 250Z" fill="#a27486" opacity=".5"/>'+
+      '<g fill="#ffffff" opacity=".55"><path d="M0 255 H800 V262 H0Z"/></g>'+
+      '<g stroke="#ffffff" stroke-opacity=".45" stroke-width="2" fill="none"><path d="M60 420 l60 -30 l70 40 l-50 40z"/><path d="M260 380 l80 -20 l40 50 l-90 20z"/><path d="M520 430 l90 -25 l60 45 l-100 20z"/></g></svg>';
+    if(scene === "nordic") return '<svg '+V+'><defs><linearGradient id="gn" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#1d2f52"/><stop offset=".55" stop-color="#5a6f9a"/><stop offset="1" stop-color="#1a2a45"/></linearGradient></defs>'+
+      '<rect width="800" height="500" fill="url(#gn)"/><circle cx="640" cy="90" r="24" fill="#f3efe0" opacity=".9"/>'+
+      '<g fill="#c9853f"><rect x="40" y="200" width="70" height="110"/><rect x="110" y="180" width="60" height="130"/><rect x="250" y="190" width="80" height="120"/><rect x="430" y="205" width="70" height="105"/><rect x="560" y="185" width="65" height="125"/><rect x="680" y="200" width="80" height="110"/></g>'+
+      '<g fill="#a8463c"><rect x="170" y="195" width="80" height="115"/><rect x="500" y="195" width="60" height="115"/><rect x="625" y="210" width="55" height="100"/></g>'+
+      '<g fill="#e3c26b"><rect x="330" y="215" width="100" height="95"/></g>'+
+      '<path d="M370 215 L380 120 L390 215Z" fill="#1d2f52"/>'+
+      '<g fill="#fde9a8"><rect x="60" y="230" width="10" height="14"/><rect x="130" y="210" width="10" height="14"/><rect x="190" y="240" width="10" height="14"/><rect x="270" y="225" width="10" height="14"/><rect x="455" y="235" width="10" height="14"/><rect x="580" y="215" width="10" height="14"/><rect x="700" y="230" width="10" height="14"/></g>'+
+      '<rect x="0" y="310" width="800" height="190" fill="#162441"/>'+
+      '<g opacity=".35"><rect x="40" y="312" width="70" height="60" fill="#c9853f"/><rect x="170" y="312" width="80" height="55" fill="#a8463c"/><rect x="330" y="312" width="100" height="50" fill="#e3c26b"/><rect x="560" y="312" width="65" height="62" fill="#c9853f"/></g>'+
+      '<g fill="#ffffff" opacity=".3"><rect x="120" y="390" width="120" height="2"/><rect x="420" y="420" width="180" height="2"/></g></svg>';
+    return '<svg '+V+'><defs><linearGradient id="gh" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#cfe0d6"/><stop offset="1" stop-color="#f4ead6"/></linearGradient></defs>'+
+      '<rect width="800" height="500" fill="url(#gh)"/><circle cx="180" cy="120" r="40" fill="#fff6dc"/>'+
+      '<path d="M0 330 Q200 220 420 300 T800 260 V500 H0Z" fill="#7d9b7c"/><path d="M0 400 Q260 300 520 380 T800 350 V500 H0Z" fill="#5c7d5f"/>'+
+      '<g fill="#efe3cc"><rect x="470" y="300" width="120" height="70"/></g><path d="M460 302 L530 260 L600 302Z" fill="#a8583e"/>'+
+      '<rect x="520" y="330" width="20" height="40" fill="#6b4a3a"/>'+
+      '<g fill="#3f5e45"><circle cx="420" cy="350" r="22"/><circle cx="640" cy="345" r="26"/><circle cx="680" cy="360" r="18"/></g></svg>';
+  }
+  function coverHTML(t){
+    if(t.photo) return '<img src="'+esc(t.photo)+'" alt="'+esc(t.name)+'" loading="lazy">';
+    return cover(t.scene);
+  }
+
+  /* ---------- rendering ---------- */
+  function upcoming(){
+    var today = todayISO();
+    return state.trips.filter(function(t){ return (t.end || t.start) >= today; })
+      .sort(function(a,b){ return a.start < b.start ? -1 : a.start > b.start ? 1 : 0; });
+  }
+
+  function renderHome(){
+    var list = upcoming();
+    var head = '<div class="top"><div><div class="eyebrow">Upcoming trips</div><h1>Edo\'s Trips</h1></div>';
+    if(list.length){
+      var n = list[0];
+      var d = daysUntil(n.start);
+      head += '<div class="next">Next: <b>'+esc(n.name)+'</b>'+(d > 0 ? ' in <b>'+d+' day'+(d === 1 ? '' : 's')+'</b>' : ' <b>now</b>')+'</div>';
+    }
+    head += '</div>';
+    var body;
+    if(!state.loaded){
+      body = '<div class="empty">'+(state.stale ? "Your trips can't be reached right now. They'll appear as soon as the trip store answers." : "Loading your trips from the trip store…")+'</div>';
+    } else if(!list.length){
+      body = '<div class="empty">No upcoming trips yet. New flight, hotel and activity confirmations in your inbox are added here every morning.</div>';
+    } else {
+      body = '<div class="grid">' + list.map(function(t){
+        var f = (t.flights||[]).length, h = (t.hotels||[]).length, a = (t.activities||[]).length;
+        var gaps = (t.alerts||[]).length;
+        return '<button class="card" data-trip="'+esc(t.id)+'" aria-label="Open '+esc(t.name)+'">'+
+          '<div class="cover">'+coverHTML(t)+'<span class="when">'+esc(whenLabel(t))+'</span></div>'+
+          '<div class="card-body"><h2>'+esc(t.name)+'</h2><div class="dates">'+esc(range(t.start, t.end))+(t.withWho ? ' · with '+esc(t.withWho) : '')+'</div>'+
+          '<div class="counts"><span><b>'+f+'</b> flight'+(f===1?'':'s')+'</span><span><b>'+h+'</b> hotel'+(h===1?'':'s')+'</span><span><b>'+a+'</b> activit'+(a===1?'y':'ies')+'</span></div>'+
+          (gaps ? '<span class="flag">⚠ '+gaps+' thing'+(gaps===1?'':'s')+' to check</span>' : '')+
+          '</div></button>';
+      }).join("") + '</div>';
+    }
+    app.innerHTML = head + body + syncLine();
+  }
+
+  function syncLine(){
+    if(!state.meta) return "";
+    var m = state.meta;
+    return '<div class="sync"><span>Synced from Gmail ('+esc(m.source || "your inbox")+')</span>'+(m.updatedAt ? '<span>Last update '+esc(new Date(m.updatedAt).toLocaleString("en-GB",{day:"numeric",month:"short",hour:"2-digit",minute:"2-digit"}))+'</span>' : '')+'<span>Refreshes every morning</span></div>';
+  }
+
+  function linkBtn(href, label){ return href ? '<a class="btn" href="'+esc(href)+'" target="_blank" rel="noopener">'+label+'</a>' : ''; }
+
+  function renderFlights(fl){
+    if(!fl || !fl.length) return '<div class="none">No flights booked for this trip.</div>';
+    return fl.slice().sort(function(a,b){ return (a.date+a.dep) < (b.date+b.dep) ? -1 : 1; }).map(function(f){
+      return '<div class="leg">'+
+        '<div class="d">'+esc(fmt(f.date,{weekday:"short"}))+'<small>'+esc(fmt(f.date,{day:"numeric",month:"short",year:"numeric"}))+'</small></div>'+
+        '<div class="route">'+
+          '<div class="pt"><span class="code">'+esc(f.from)+'</span><span class="t"><b class="mono">'+esc(f.dep||"—")+'</b> '+esc(f.fromCity||"")+'</span></div>'+
+          '<span class="dash"></span>'+
+          '<div class="pt"><span class="code">'+esc(f.to)+'</span><span class="t"><b class="mono">'+esc(f.arr||"—")+'</b>'+(f.arrDay ? ' <span class="mono">'+esc(f.arrDay)+'</span>' : '')+' '+esc(f.toCity||"")+'</span></div>'+
+        '</div>'+
+        '<div class="fno"><span class="num">'+esc(f.number||"No. n/a")+'</span><small>'+esc(f.airline||"")+'</small></div>'+
+        '<div class="sub">'+(f.ref ? 'Booking <span class="mono">'+esc(f.ref)+'</span>' : '')+(f.changed ? '<span class="changed">Schedule changed</span>' : '')+(f.note ? ' · '+esc(f.note) : '')+(f.email ? ' · <a href="'+esc(f.email)+'" target="_blank" rel="noopener">Confirmation email</a>' : '')+'</div>'+
+      '</div>';
+    }).join("");
+  }
+
+  function renderHotels(hs){
+    if(!hs || !hs.length) return '<div class="none">No hotels booked for this trip.</div>';
+    return hs.slice().sort(function(a,b){ return a.checkIn < b.checkIn ? -1 : 1; }).map(function(h){
+      return '<div class="item"><div style="min-width:0"><h3>'+esc(h.name)+'</h3>'+
+        (h.address ? '<div class="note">'+esc(h.address)+'</div>' : '')+
+        '<div class="stay"><div><span>Check-in</span>'+esc(fmt(h.checkIn))+' · <b class="mono">'+esc(h.checkInTime||"time not stated")+'</b></div>'+
+        '<div><span>Check-out</span>'+esc(fmt(h.checkOut))+' · <b class="mono">'+esc(h.checkOutTime||"time not stated")+'</b></div>'+
+        (h.ref ? '<div><span>Booking</span><b class="mono">'+esc(h.ref)+'</b></div>' : '')+'</div></div>'+
+        '<div class="links">'+linkBtn(h.maps || mapsUrl(h.mapsQuery || h.name), "Google Maps ↗")+linkBtn(h.email, "Confirmation email ↗")+'</div>'+
+        (h.instructions ? '<div class="howto"><b>Getting in</b>'+esc(h.instructions)+'</div>' : '')+
+        '</div>';
+    }).join("");
+  }
+
+  function renderActivities(as){
+    if(!as || !as.length) return '<div class="none">No activities booked for this trip.</div>';
+    return as.slice().sort(function(a,b){ return (a.date+(a.time||"")) < (b.date+(b.time||"")) ? -1 : 1; }).map(function(a){
+      return '<div class="item"><div style="min-width:0"><div class="act-when"><b>'+esc(fmt(a.date))+'</b>'+(a.time ? ' · <span class="mono">'+esc(a.time)+'</span>' : '')+(a.endDate ? ' → '+esc(fmt(a.endDate))+(a.endTime ? ' <span class="mono">'+esc(a.endTime)+'</span>' : '') : '')+'</div>'+
+        '<h3>'+esc(a.title)+'</h3>'+(a.place ? '<div class="note">'+esc(a.place)+'</div>' : '')+(a.note ? '<div class="note">'+esc(a.note)+'</div>' : '')+'</div>'+
+        '<div class="links">'+linkBtn(a.maps || (a.mapsQuery ? mapsUrl(a.mapsQuery) : ""), "Google Maps ↗")+linkBtn(a.email, "Confirmation email ↗")+'</div></div>';
+    }).join("");
+  }
+
+  function renderTrip(t){
+    var canPhoto = !!(state.assets && state.canWrite);
+    var html = '<button class="back" data-home>← All trips</button>'+
+      '<div class="hero">'+coverHTML(t)+
+        (canPhoto ? '<button class="photo-btn" data-photo="'+esc(t.id)+'">'+(t.photo ? "Change photo" : "Add photo")+'</button>' : '')+
+        '<div class="hero-text"><div class="eyebrow" style="color:#fff;opacity:.8">'+esc(whenLabel(t))+'</div><h1>'+esc(t.name)+'</h1><p>'+esc(range(t.start, t.end))+(t.withWho ? ' · with '+esc(t.withWho) : '')+'</p></div></div>';
+    if(t.alerts && t.alerts.length){
+      html += '<div class="alerts"><h3>Check before you go</h3><ul>'+t.alerts.map(function(x){ return '<li>'+esc(x)+'</li>'; }).join("")+'</ul></div>';
+    }
+    var sec = function(title, n, inner){ return '<section class="section"><div class="section-head"><h2>'+title+'</h2><span class="n">'+n+'</span></div>'+inner+'</section>'; };
+    html += sec("Flights", (t.flights||[]).length, renderFlights(t.flights));
+    html += sec("Hotels", (t.hotels||[]).length, renderHotels(t.hotels));
+    html += sec("Activities booked", (t.activities||[]).length, renderActivities(t.activities));
+    html += syncLine();
+    app.innerHTML = html;
+    if(lastShown !== t.id){ window.scrollTo(0,0); lastShown = t.id; }
+  }
+  var lastShown = null;
+
+  function render(){
+    var h = (location.hash || "").replace(/^#/, "");
+    if(h.indexOf("trip-") === 0){
+      var id = h.slice(5);
+      var t = state.trips.filter(function(x){ return x.id === id; })[0];
+      if(t){ renderTrip(t); return; }
+      if(!state.loaded){ app.innerHTML = '<button class="back" data-home>← All trips</button><div class="empty">Loading this trip…</div>'; return; }
+    }
+    lastShown = null;
+    renderHome();
+  }
+
+  app.addEventListener("click", function(e){
+    var c = e.target.closest("[data-trip]");
+    if(c){ location.hash = "trip-" + c.getAttribute("data-trip"); return; }
+    if(e.target.closest("[data-home]")){ location.hash = ""; return; }
+    var p = e.target.closest("[data-photo]");
+    if(p){ photoTarget = p.getAttribute("data-photo"); photoInput.value = ""; photoInput.click(); }
+  });
+  window.addEventListener("hashchange", render);
+
+  photoInput.addEventListener("change", async function(){
+    var file = photoInput.files && photoInput.files[0];
+    if(!file || !photoTarget || !state.assets || !state.db) return;
+    var btn = app.querySelector("[data-photo]");
+    if(btn){ btn.textContent = "Uploading…"; btn.disabled = true; }
+    try{
+      var res = await state.assets.upload(file);
+      await state.db.doc("trips/" + photoTarget).update({ photo: res.url });
+    }catch(err){
+      if(btn){ btn.textContent = "Upload failed, try again"; btn.disabled = false; }
+    }
+  });
+
+  /* ---------- encrypted data ---------- */
+  var KEY_STORE = "trips-passphrase";
+  function b64(s){ var bin = atob(s), a = new Uint8Array(bin.length); for(var i=0;i<bin.length;i++) a[i]=bin.charCodeAt(i); return a; }
+  async function decrypt(blob, pass){
+    var base = await crypto.subtle.importKey("raw", new TextEncoder().encode(pass), "PBKDF2", false, ["deriveKey"]);
+    var key = await crypto.subtle.deriveKey({name:"PBKDF2", salt:b64(blob.salt), iterations:blob.iter, hash:"SHA-256"}, base, {name:"AES-GCM", length:256}, false, ["decrypt"]);
+    var pt = await crypto.subtle.decrypt({name:"AES-GCM", iv:b64(blob.iv)}, key, b64(blob.ct));
+    return JSON.parse(new TextDecoder().decode(pt));
+  }
+  function getPass(){ try{ return localStorage.getItem(KEY_STORE); }catch(e){ return null; } }
+  function setPass(p){ try{ localStorage.setItem(KEY_STORE, p); }catch(e){} }
+
+  function showLock(msg){
+    app.innerHTML = '<form class="lock" id="lock"><div class="eyebrow">Edo\'s Trips</div><h1>Unlock your trips</h1>'+
+      '<p>Enter your passphrase once. This phone will remember it.</p>'+
+      '<input id="pass" type="password" autocomplete="current-password" autocapitalize="none" spellcheck="false" placeholder="Passphrase">'+
+      '<button type="submit">Unlock</button><div class="err" id="err">'+esc(msg||"")+'</div></form>';
+    document.getElementById("lock").addEventListener("submit", function(e){
+      e.preventDefault();
+      var p = document.getElementById("pass").value.trim();
+      if(!p) return;
+      load(p, true);
+    });
+  }
+
+  var lastBlob = null;
+  async function fetchBlob(){
+    try{
+      var r = await fetch("data.enc?ts=" + Date.now(), {cache:"no-store"});
+      if(!r.ok) throw new Error("http " + r.status);
+      lastBlob = await r.json(); state.stale = false;
+    }catch(e){
+      state.stale = true;
+      if(!lastBlob){ try{ var c = await caches.open("trips-data"); var hit = await c.match("data.enc"); if(hit) lastBlob = await hit.json(); }catch(_){} }
+    }
+    return lastBlob;
+  }
+
+  async function load(pass, fromForm){
+    var blob = await fetchBlob();
+    if(!blob){ app.innerHTML = '<div class="empty">Can\'t reach your trips and nothing is saved on this phone yet. Connect to the internet and open the app again.</div>'; return; }
+    try{
+      var data = await decrypt(blob, pass);
+      setPass(pass);
+      state.trips = data.trips || []; state.meta = data.meta || null; state.loaded = true;
+      render();
+    }catch(e){
+      showLock(fromForm ? "That passphrase didn't work. Check it and try again." : "");
+    }
+  }
+
+  var baseRenderHome = renderHome;
+  renderHome = function(){
+    baseRenderHome();
+    var top = app.querySelector(".top");
+    if(top){
+      var b = document.createElement("button"); b.className = "refresh"; b.textContent = "Refresh"; b.setAttribute("data-refresh","");
+      top.appendChild(b);
+      if(state.stale){ var o = document.createElement("div"); o.className = "offline"; o.textContent = "Offline: showing the last saved copy."; top.after(o); }
+    }
+  };
+  app.addEventListener("click", function(e){ if(e.target.closest("[data-refresh]")){ var p = getPass(); if(p) load(p); } });
+  document.addEventListener("visibilitychange", function(){ if(document.visibilityState === "visible"){ var p = getPass(); if(p && state.loaded) load(p); } });
+
+  var saved = getPass();
+  if(saved) load(saved); else showLock("");
+
+  if("serviceWorker" in navigator){ navigator.serviceWorker.register("sw.js").catch(function(){}); }
+})();
+</script>
+</body>
+</html>
