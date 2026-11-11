@@ -404,7 +404,7 @@ button{font:inherit;color:inherit}
       var seed = await fetchSeed();
       if(seed){ try{ await decrypt(seed, pass); }catch(e){ showLock(fromForm ? "That passphrase didn't work. Check it and try again." : ""); return; } }
       setPass(pass);
-      state.trips = local.trips || []; state.meta = local.meta || null; state.loaded = true; render(); return;
+      state.trips = local.trips || []; state.meta = local.meta || null; state.loaded = true; render(); pull(); return;
     }
     var blob = await fetchSeed();
     if(!blob){ app.innerHTML = '<div class="empty">Can\'t reach your trips and nothing is saved on this phone yet. Connect to the internet and open the app again.</div>'; return; }
@@ -412,7 +412,7 @@ button{font:inherit;color:inherit}
       var data = await decrypt(blob, pass);
       setPass(pass);
       state.trips = data.trips || []; state.meta = data.meta || null; state.loaded = true;
-      saveLocal(); render();
+      saveLocal(); render(); pull();
     }catch(e){
       showLock(fromForm ? "That passphrase didn't work. Check it and try again." : "");
     }
@@ -421,26 +421,42 @@ button{font:inherit;color:inherit}
   function stamp(m){ return (m && (m.scannedThrough || m.updatedAt)) ? new Date(m.scannedThrough || m.updatedAt).toLocaleString("en-GB",{day:"numeric",month:"short",hour:"2-digit",minute:"2-digit"}) : "unknown"; }
   var busy = false, status = "", statusKind = "status";
 
+  async function callService(action, timeoutMs){
+    var ctrl = new AbortController(); var timer = setTimeout(function(){ ctrl.abort(); }, timeoutMs);
+    try{
+      var r = await fetch(ENDPOINT, { method:"POST", headers:{"Content-Type":"text/plain;charset=utf-8"}, body: JSON.stringify({ token: getPass(), action: action, trips: state.trips, meta: state.meta }), signal: ctrl.signal, redirect:"follow" });
+      return await r.json();
+    }finally{ clearTimeout(timer); }
+  }
+  function serviceError(res){
+    return res.error === "auth" ? "The trips service rejected your passphrase. Check APP_TOKEN in the script settings." :
+      res.error === "no_api_key" ? "The trips service has no Claude API key. Add ANTHROPIC_API_KEY in the script settings." :
+      "The trips service hit an error: " + (res.message || res.error || "unknown") + ".";
+  }
+
+  // Quietly pull the latest hourly result whenever the app opens or comes back to the foreground.
+  async function pull(){
+    if(!ENDPOINT || busy || !state.loaded) return;
+    try{
+      var res = await callService("get", 30000);
+      if(res && res.ok){ state.trips = res.trips || state.trips; state.meta = res.meta || state.meta; saveLocal(); render(); }
+    }catch(e){}
+  }
+
   async function refresh(){
     if(busy) return;
     if(!ENDPOINT){ status = "Refresh isn't connected to your inbox yet."; statusKind = "offline"; render(); return; }
     busy = true; status = "Checking your inbox… this can take up to a minute."; statusKind = "status"; render();
-    var ctrl = new AbortController(); var timer = setTimeout(function(){ ctrl.abort(); }, 170000);
     try{
-      var r = await fetch(ENDPOINT, { method:"POST", headers:{"Content-Type":"text/plain;charset=utf-8"}, body: JSON.stringify({ token: getPass(), trips: state.trips, meta: state.meta }), signal: ctrl.signal, redirect:"follow" });
-      var res = await r.json();
-      if(!res.ok){
-        status = res.error === "auth" ? "The refresh service rejected the passphrase." : res.error === "no_api_key" ? "The refresh service has no Claude API key set." : "The refresh service hit an error: " + (res.message || "unknown") + ".";
-        statusKind = "offline";
-      } else {
-        state.trips = res.trips || state.trips; state.meta = res.meta || state.meta; saveLocal();
-        status = res.summary || "Up to date."; statusKind = "status";
-      }
+      var res = await callService("refresh", 170000);
+      if(!res.ok){ status = serviceError(res); statusKind = "offline"; }
+      else { state.trips = res.trips || state.trips; state.meta = res.meta || state.meta; saveLocal(); status = res.summary || "Up to date."; statusKind = "status"; }
     }catch(e){
-      status = e && e.name === "AbortError" ? "Your inbox check took too long. Try again." : "Couldn't reach the refresh service. Check your connection and try again.";
+      status = e && e.name === "AbortError" ? "Your inbox check took too long. Try again." : "Couldn't reach the trips service. Check your connection and try again.";
       statusKind = "offline";
-    }finally{ clearTimeout(timer); busy = false; render(); }
+    }finally{ busy = false; render(); }
   }
+  document.addEventListener("visibilitychange", function(){ if(document.visibilityState === "visible") pull(); });
 
   var baseRenderHome = renderHome;
   renderHome = function(){
