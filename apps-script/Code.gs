@@ -8,6 +8,10 @@
  *   ANTHROPIC_API_KEY  your Claude API key
  *   APP_TOKEN          the same passphrase you type into the app
  *
+ * Gmail access is READ-ONLY: the script uses the Gmail API with the
+ * gmail.readonly scope, locked in appsscript.json. It cannot send, change or
+ * delete mail.
+ *
  * One-time setup: run `setup` from the editor (grants access and turns on
  * the hourly check), then Deploy → New deployment → Web app.
  */
@@ -24,13 +28,13 @@ var TRAVEL_SENDERS = 'from:(booking.com OR airbnb OR vueling OR ryanair OR easyj
 
 /** Run once from the editor: grants Gmail + internet access and schedules the hourly check. */
 function setup() {
-  GmailApp.search("newer_than:1d", 0, 1);
+  Gmail.Users.Messages.list("me", { maxResults: 1 });
   UrlFetchApp.fetch("https://api.anthropic.com", { muteHttpExceptions: true });
   ScriptApp.getProjectTriggers().forEach(function (t) {
     if (t.getHandlerFunction() === "hourlyScan") ScriptApp.deleteTrigger(t);
   });
   ScriptApp.newTrigger("hourlyScan").timeBased().everyHours(1).create();
-  Logger.log("Setup done for " + Session.getActiveUser().getEmail() + ": hourly check is on.");
+  Logger.log("Setup done for " + myAddress() + ": read-only Gmail access, hourly check is on.");
 }
 
 /** Called by the hourly trigger. */
@@ -102,31 +106,68 @@ function scanAndSave(state) {
   }
 }
 
+function myAddress() {
+  return Gmail.Users.getProfile("me").emailAddress;
+}
+
 function collectEmails(since, seenIds) {
   var after = "after:" + Math.floor(since.getTime() / 1000);
   var queries = [after + " -category:promotions " + TRAVEL_TERMS, after + " " + TRAVEL_SENDERS];
-  var me = Session.getActiveUser().getEmail();
+  var me = myAddress();
   var seen = {};
   seenIds.forEach(function (id) { seen[id] = true; });
   var out = [];
   queries.forEach(function (q) {
-    GmailApp.search(q, 0, 50).forEach(function (thread) {
-      thread.getMessages().forEach(function (m) {
-        if (out.length >= MAX_EMAILS || seen[m.getId()] || m.getDate() < since) return;
-        seen[m.getId()] = true;
-        var body = String(m.getPlainBody() || "").replace(/[ \t ͏]+/g, " ").replace(/\n\s*\n+/g, "\n").slice(0, MAX_BODY_CHARS);
-        out.push({
-          id: m.getId(),
-          link: "https://mail.google.com/mail/?authuser=" + encodeURIComponent(me) + "#all/" + thread.getId(),
-          date: m.getDate().toISOString(),
-          from: m.getFrom(),
-          subject: m.getSubject(),
-          body: body
-        });
+    var list = Gmail.Users.Messages.list("me", { q: q, maxResults: 50 });
+    (list.messages || []).forEach(function (ref) {
+      if (out.length >= MAX_EMAILS || seen[ref.id]) return;
+      seen[ref.id] = true;
+      var m = Gmail.Users.Messages.get("me", ref.id, { format: "full" });
+      var date = new Date(Number(m.internalDate));
+      if (date < since) return;
+      var body = bodyText(m.payload).replace(/[ \t\u00a0\u034f]+/g, " ").replace(/\n\s*\n+/g, "\n").slice(0, MAX_BODY_CHARS);
+      out.push({
+        id: m.id,
+        link: "https://mail.google.com/mail/?authuser=" + encodeURIComponent(me) + "#all/" + m.threadId,
+        date: date.toISOString(),
+        from: header(m.payload, "From"),
+        subject: header(m.payload, "Subject"),
+        body: body
       });
     });
   });
   return out;
+}
+
+function header(payload, name) {
+  var h = (payload && payload.headers || []).filter(function (x) { return String(x.name).toLowerCase() === name.toLowerCase(); })[0];
+  return h ? h.value : "";
+}
+
+function bodyText(payload) {
+  var text = findPart(payload, "text/plain");
+  if (text) return text;
+  var html = findPart(payload, "text/html");
+  if (!html) return "";
+  return html.replace(/<(style|script)[\s\S]*?<\/\1>/gi, " ").replace(/<br\s*\/?>|<\/(p|div|tr|li|h\d)>/gi, "\n").replace(/<[^>]+>/g, " ")
+    .replace(/&nbsp;/g, " ").replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&#39;|&apos;/g, "'").replace(/&quot;/g, '"');
+}
+
+function findPart(part, mime) {
+  if (!part) return null;
+  if (part.mimeType === mime && part.body && part.body.data) return decodeData(part.body.data);
+  var kids = part.parts || [];
+  for (var i = 0; i < kids.length; i++) {
+    var r = findPart(kids[i], mime);
+    if (r) return r;
+  }
+  return null;
+}
+
+function decodeData(data) {
+  // The Gmail advanced service returns bytes; the raw API returns base64url text.
+  var bytes = Array.isArray(data) ? data : Utilities.base64DecodeWebSafe(String(data));
+  return Utilities.newBlob(bytes).getDataAsString("UTF-8");
 }
 
 function askClaude(apiKey, trips, emails) {
