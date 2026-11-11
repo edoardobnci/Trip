@@ -1,5 +1,5 @@
 // Network-first for everything, so new versions reach the phone on the next open; cached copies serve offline.
-const CACHE = "trips-v2";
+const CACHE = "trips-v3";
 const SHELL_FILES = ["./", "index.html", "manifest.webmanifest", "apple-touch-icon.png", "icon-192.png", "icon-512.png"];
 
 self.addEventListener("install", (e) => {

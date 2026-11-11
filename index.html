@@ -266,7 +266,7 @@ button{font:inherit;color:inherit}
     return '<div class="sync"><span>Synced from Gmail ('+esc(m.source || "your inbox")+')</span>'+(m.updatedAt ? '<span>Last update '+esc(new Date(m.updatedAt).toLocaleString("en-GB",{day:"numeric",month:"short",hour:"2-digit",minute:"2-digit"}))+'</span>' : '')+'<span>Refreshes every morning</span></div>';
   }
 
-  function linkBtn(href, label){ return href ? '<a class="btn" href="'+esc(href)+'" target="_blank" rel="noopener">'+label+'</a>' : ''; }
+  function linkBtn(href, label){ return (href && /^https:\/\//.test(href)) ? '<a class="btn" href="'+esc(href)+'" target="_blank" rel="noopener">'+label+'</a>' : ''; }
 
   function renderFlights(fl){
     if(!fl || !fl.length) return '<div class="none">No flights booked for this trip.</div>';
@@ -381,45 +381,65 @@ button{font:inherit;color:inherit}
       e.preventDefault();
       var p = document.getElementById("pass").value.trim();
       if(!p) return;
-      load(p, true);
+      unlock(p, true);
     });
   }
 
-  var lastBlob = null;
-  async function fetchBlob(){
-    try{
-      var r = await fetch("data.enc?ts=" + Date.now(), {cache:"no-store"});
-      if(!r.ok) throw new Error("http " + r.status);
-      lastBlob = await r.json(); state.stale = false;
-    }catch(e){
-      state.stale = true;
-      if(!lastBlob){ try{ var c = await caches.open("trips-data"); var hit = await c.match("data.enc"); if(hit) lastBlob = await hit.json(); }catch(_){} }
-    }
-    return lastBlob;
+  /* Refresh service: a Google Apps Script web app in Edo's Google account that reads Gmail and asks Claude. */
+  var ENDPOINT = "";
+  var LOCAL = "trips-data-v1";
+  function saveLocal(){ try{ localStorage.setItem(LOCAL, JSON.stringify({trips: state.trips, meta: state.meta})); }catch(e){} }
+  function readLocal(){ try{ var v = localStorage.getItem(LOCAL); return v ? JSON.parse(v) : null; }catch(e){ return null; } }
+
+  async function fetchSeed(){
+    try{ var r = await fetch("data.enc?ts=" + Date.now(), {cache:"no-store"}); if(r.ok) return await r.json(); }catch(e){}
+    try{ var c = await caches.open("trips-data"); var hit = await c.match("data.enc"); if(hit) return await hit.json(); }catch(_){}
+    return null;
   }
 
-  function stamp(m){ return (m && m.updatedAt) ? new Date(m.updatedAt).toLocaleString("en-GB",{day:"numeric",month:"short",hour:"2-digit",minute:"2-digit"}) : "unknown"; }
-  var busy = false, status = "";
-  async function load(pass, fromForm, manual){
-    if(busy) return; busy = true;
-    var before = state.meta && state.meta.updatedAt;
-    if(manual){ status = "Updating…"; render(); }
-    var blob = await fetchBlob();
-    busy = false;
+  async function unlock(pass, fromForm){
+    var local = readLocal();
+    if(local){
+      // a local copy exists: the passphrase still gates the app, checked against the seed file when reachable
+      var seed = await fetchSeed();
+      if(seed){ try{ await decrypt(seed, pass); }catch(e){ showLock(fromForm ? "That passphrase didn't work. Check it and try again." : ""); return; } }
+      setPass(pass);
+      state.trips = local.trips || []; state.meta = local.meta || null; state.loaded = true; render(); return;
+    }
+    var blob = await fetchSeed();
     if(!blob){ app.innerHTML = '<div class="empty">Can\'t reach your trips and nothing is saved on this phone yet. Connect to the internet and open the app again.</div>'; return; }
     try{
       var data = await decrypt(blob, pass);
       setPass(pass);
       state.trips = data.trips || []; state.meta = data.meta || null; state.loaded = true;
-      if(manual){
-        if(state.stale) status = "Couldn't reach the server. Showing the copy saved on this phone.";
-        else if(before && state.meta && state.meta.updatedAt !== before) status = "Updated with the latest bookings.";
-        else status = "Already up to date.";
-      }
-      render();
+      saveLocal(); render();
     }catch(e){
       showLock(fromForm ? "That passphrase didn't work. Check it and try again." : "");
     }
+  }
+
+  function stamp(m){ return (m && (m.scannedThrough || m.updatedAt)) ? new Date(m.scannedThrough || m.updatedAt).toLocaleString("en-GB",{day:"numeric",month:"short",hour:"2-digit",minute:"2-digit"}) : "unknown"; }
+  var busy = false, status = "", statusKind = "status";
+
+  async function refresh(){
+    if(busy) return;
+    if(!ENDPOINT){ status = "Refresh isn't connected to your inbox yet."; statusKind = "offline"; render(); return; }
+    busy = true; status = "Checking your inbox… this can take up to a minute."; statusKind = "status"; render();
+    var ctrl = new AbortController(); var timer = setTimeout(function(){ ctrl.abort(); }, 170000);
+    try{
+      var r = await fetch(ENDPOINT, { method:"POST", headers:{"Content-Type":"text/plain;charset=utf-8"}, body: JSON.stringify({ token: getPass(), trips: state.trips, meta: state.meta }), signal: ctrl.signal, redirect:"follow" });
+      var res = await r.json();
+      if(!res.ok){
+        status = res.error === "auth" ? "The refresh service rejected the passphrase." : res.error === "no_api_key" ? "The refresh service has no Claude API key set." : "The refresh service hit an error: " + (res.message || "unknown") + ".";
+        statusKind = "offline";
+      } else {
+        state.trips = res.trips || state.trips; state.meta = res.meta || state.meta; saveLocal();
+        status = res.summary || "Up to date."; statusKind = "status";
+      }
+    }catch(e){
+      status = e && e.name === "AbortError" ? "Your inbox check took too long. Try again." : "Couldn't reach the refresh service. Check your connection and try again.";
+      statusKind = "offline";
+    }finally{ clearTimeout(timer); busy = false; render(); }
   }
 
   var baseRenderHome = renderHome;
@@ -429,17 +449,16 @@ button{font:inherit;color:inherit}
     if(top){
       var box = document.createElement("div"); box.className = "refresh-box";
       var b = document.createElement("button"); b.className = "refresh"; b.setAttribute("data-refresh","");
-      b.textContent = busy ? "Updating…" : "Refresh"; b.disabled = busy;
-      var d = document.createElement("div"); d.className = "datestamp"; d.textContent = "Bookings as of " + stamp(state.meta);
+      b.textContent = busy ? "Checking…" : "Refresh"; b.disabled = busy;
+      var d = document.createElement("div"); d.className = "datestamp"; d.textContent = "Inbox checked " + stamp(state.meta);
       box.appendChild(b); box.appendChild(d); top.appendChild(box);
-      if(status && status !== "Updating…"){ var st = document.createElement("div"); st.className = state.stale ? "offline" : "status"; st.textContent = status; top.after(st); }
+      if(status){ var st = document.createElement("div"); st.className = statusKind; st.textContent = status; top.after(st); }
     }
   };
-  app.addEventListener("click", function(e){ if(e.target.closest("[data-refresh]")){ var p = getPass(); if(p) load(p, false, true); } });
-  document.addEventListener("visibilitychange", function(){ if(document.visibilityState === "visible"){ status = ""; var p = getPass(); if(p && state.loaded) load(p); } });
+  app.addEventListener("click", function(e){ if(e.target.closest("[data-refresh]")) refresh(); });
 
   var saved = getPass();
-  if(saved) load(saved); else showLock("");
+  if(saved) unlock(saved); else showLock("");
 
   if("serviceWorker" in navigator){
     var hadController = !!navigator.serviceWorker.controller, reloaded = false;
