@@ -386,7 +386,7 @@ button{font:inherit;color:inherit}
   }
 
   /* Refresh service: a Google Apps Script web app in Edo's Google account that reads Gmail and asks Claude. */
-  var ENDPOINT = "";
+  var ENDPOINT = "https://script.google.com/macros/s/AKfycbwwNNXM0NKCcso95yREkLIh9S6CD6NajNTmMk6kknDwUPKjlu-gjOnVRrvS_ktAYnQl0g/exec";
   var LOCAL = "trips-data-v1";
   function saveLocal(){ try{ localStorage.setItem(LOCAL, JSON.stringify({trips: state.trips, meta: state.meta})); }catch(e){} }
   function readLocal(){ try{ var v = localStorage.getItem(LOCAL); return v ? JSON.parse(v) : null; }catch(e){ return null; } }
