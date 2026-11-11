@@ -135,6 +135,10 @@ button{font:inherit;color:inherit}
 .lock button{font:inherit;font-size:17px;font-weight:600;padding:12px 14px;border-radius:12px;border:0;background:var(--accent);color:#1a1209;cursor:pointer}
 .lock .err{color:#c0392b;font-size:14px;min-height:1.2em}
 .refresh{background:none;border:1px solid var(--line);border-radius:999px;padding:6px 12px;font-size:13px;color:var(--muted);cursor:pointer}
+.refresh-box{display:flex;flex-direction:column;align-items:flex-end;gap:4px}
+.datestamp{font-size:12px;color:var(--muted)}
+.status{font-size:13px;color:var(--ok);margin-bottom:14px}
+.refresh:disabled{opacity:.6}
 .offline{font-size:13px;color:var(--warn-ink);background:var(--warn-bg);border-radius:8px;padding:6px 10px;margin-bottom:14px}
 </style>
 </head>
@@ -394,13 +398,24 @@ button{font:inherit;color:inherit}
     return lastBlob;
   }
 
-  async function load(pass, fromForm){
+  function stamp(m){ return (m && m.updatedAt) ? new Date(m.updatedAt).toLocaleString("en-GB",{day:"numeric",month:"short",hour:"2-digit",minute:"2-digit"}) : "unknown"; }
+  var busy = false, status = "";
+  async function load(pass, fromForm, manual){
+    if(busy) return; busy = true;
+    var before = state.meta && state.meta.updatedAt;
+    if(manual){ status = "Updating…"; render(); }
     var blob = await fetchBlob();
+    busy = false;
     if(!blob){ app.innerHTML = '<div class="empty">Can\'t reach your trips and nothing is saved on this phone yet. Connect to the internet and open the app again.</div>'; return; }
     try{
       var data = await decrypt(blob, pass);
       setPass(pass);
       state.trips = data.trips || []; state.meta = data.meta || null; state.loaded = true;
+      if(manual){
+        if(state.stale) status = "Couldn't reach the server. Showing the copy saved on this phone.";
+        else if(before && state.meta && state.meta.updatedAt !== before) status = "Updated with the latest bookings.";
+        else status = "Already up to date.";
+      }
       render();
     }catch(e){
       showLock(fromForm ? "That passphrase didn't work. Check it and try again." : "");
@@ -412,18 +427,25 @@ button{font:inherit;color:inherit}
     baseRenderHome();
     var top = app.querySelector(".top");
     if(top){
-      var b = document.createElement("button"); b.className = "refresh"; b.textContent = "Refresh"; b.setAttribute("data-refresh","");
-      top.appendChild(b);
-      if(state.stale){ var o = document.createElement("div"); o.className = "offline"; o.textContent = "Offline: showing the last saved copy."; top.after(o); }
+      var box = document.createElement("div"); box.className = "refresh-box";
+      var b = document.createElement("button"); b.className = "refresh"; b.setAttribute("data-refresh","");
+      b.textContent = busy ? "Updating…" : "Refresh"; b.disabled = busy;
+      var d = document.createElement("div"); d.className = "datestamp"; d.textContent = "Bookings as of " + stamp(state.meta);
+      box.appendChild(b); box.appendChild(d); top.appendChild(box);
+      if(status && status !== "Updating…"){ var st = document.createElement("div"); st.className = state.stale ? "offline" : "status"; st.textContent = status; top.after(st); }
     }
   };
-  app.addEventListener("click", function(e){ if(e.target.closest("[data-refresh]")){ var p = getPass(); if(p) load(p); } });
-  document.addEventListener("visibilitychange", function(){ if(document.visibilityState === "visible"){ var p = getPass(); if(p && state.loaded) load(p); } });
+  app.addEventListener("click", function(e){ if(e.target.closest("[data-refresh]")){ var p = getPass(); if(p) load(p, false, true); } });
+  document.addEventListener("visibilitychange", function(){ if(document.visibilityState === "visible"){ status = ""; var p = getPass(); if(p && state.loaded) load(p); } });
 
   var saved = getPass();
   if(saved) load(saved); else showLock("");
 
-  if("serviceWorker" in navigator){ navigator.serviceWorker.register("sw.js").catch(function(){}); }
+  if("serviceWorker" in navigator){
+    var hadController = !!navigator.serviceWorker.controller, reloaded = false;
+    navigator.serviceWorker.addEventListener("controllerchange", function(){ if(hadController && !reloaded){ reloaded = true; location.reload(); } });
+    navigator.serviceWorker.register("sw.js", {updateViaCache:"none"}).then(function(r){ r.update(); }).catch(function(){});
+  }
 })();
 </script>
 </body>

@@ -1,41 +1,31 @@
-// Offline cache: app shell cache-first, encrypted data network-first.
-const SHELL = "trips-shell-v1";
-const DATA = "trips-data";
+// Network-first for everything, so new versions reach the phone on the next open; cached copies serve offline.
+const CACHE = "trips-v2";
 const SHELL_FILES = ["./", "index.html", "manifest.webmanifest", "apple-touch-icon.png", "icon-192.png", "icon-512.png"];
 
 self.addEventListener("install", (e) => {
-  e.waitUntil(caches.open(SHELL).then((c) => c.addAll(SHELL_FILES)).then(() => self.skipWaiting()));
+  e.waitUntil(caches.open(CACHE).then((c) => c.addAll(SHELL_FILES)).then(() => self.skipWaiting()));
 });
 
 self.addEventListener("activate", (e) => {
   e.waitUntil(
-    caches.keys().then((keys) => Promise.all(keys.filter((k) => k !== SHELL && k !== DATA).map((k) => caches.delete(k))))
+    caches.keys()
+      .then((keys) => Promise.all(keys.filter((k) => k !== CACHE && k !== "trips-data").map((k) => caches.delete(k))))
       .then(() => self.clients.claim())
   );
 });
 
 self.addEventListener("fetch", (e) => {
   const url = new URL(e.request.url);
-  if (url.origin !== location.origin) return;
-  if (url.pathname.endsWith("/data.enc")) {
-    e.respondWith(
-      fetch(e.request, { cache: "no-store" })
-        .then((res) => {
-          const copy = res.clone();
-          caches.open(DATA).then((c) => c.put("data.enc", copy));
-          return res;
-        })
-        .catch(() => caches.open(DATA).then((c) => c.match("data.enc")))
-    );
-    return;
-  }
+  if (url.origin !== location.origin || e.request.method !== "GET") return;
+  const isData = url.pathname.endsWith("/data.enc");
+  const key = isData ? "data.enc" : e.request;
+  const store = isData ? "trips-data" : CACHE;
   e.respondWith(
-    caches.match(e.request, { ignoreSearch: true }).then((hit) => {
-      const net = fetch(e.request).then((res) => {
-        if (res.ok) caches.open(SHELL).then((c) => c.put(e.request, res.clone()));
+    fetch(e.request.url, { cache: "no-store" })
+      .then((res) => {
+        if (res.ok) { const copy = res.clone(); caches.open(store).then((c) => c.put(key, copy)); }
         return res;
-      }).catch(() => hit);
-      return hit || net;
-    })
+      })
+      .catch(() => caches.open(store).then((c) => c.match(key, { ignoreSearch: true })).then((hit) => hit || caches.match(e.request, { ignoreSearch: true })))
   );
 });
